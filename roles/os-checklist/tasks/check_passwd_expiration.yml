@@ -1,0 +1,52 @@
+---
+- name: Obtain and review the details of password expiration date for each user .....
+  block:
+    - name: Get list of users with bash shell and UID >= 400
+      shell: "awk -F: '($7 == \"/bin/bash\" && $3 >= 400) {print $1}' /etc/passwd"
+      register: user_list_output
+      changed_when: false
+
+    - name: Set user_list variable
+      set_fact:
+        user_list: "{{ user_list_output.stdout_lines }}"
+
+    - name: Get password expiration date for each user
+      shell: |
+        chage -l {{ user }} | grep "Password expires" | awk '{print $4}'
+      register: password_expiry_results
+      with_items: "{{ user_list }}"
+      loop_control:
+        loop_var: user
+      failed_when: false
+
+- name: Set facts after checking.......
+  block:
+    - name: PASS if password never expires 
+      set_fact:
+        check_passwd_expiration: "PASS"
+      when: status.stdout_lines[0] == 'never'
+      loop: "{{ password_expiry_results.results }}"
+      loop_control:
+        loop_var: status
+        label: "{{ status.user }}"
+
+
+    - name: FAIL if password expires 
+      set_fact:
+        check_passwd_expiration: "FAIL"
+      when: status.stdout_lines[0] != 'never'
+      loop: "{{ password_expiry_results.results }}"
+      loop_control:
+        loop_var: status
+        label: "{{ status.user }}"
+
+- name: Detailed results are output after the checking process is finished....
+  debug:
+    msg:
+      - "User: {{ result.user }}"
+      - "- Password expires: {{ result.stdout_lines[0] if result.stdout_lines | length > 0 else 'No data' }}"
+      - "- Status check: {{ 'PASS' if result.stdout_lines | length > 0 and result.stdout_lines[0] == 'never' else 'FAIL' }}"
+  loop: "{{ password_expiry_results.results }}"
+  loop_control:
+    loop_var: result
+    label: "{{ result.user }}"

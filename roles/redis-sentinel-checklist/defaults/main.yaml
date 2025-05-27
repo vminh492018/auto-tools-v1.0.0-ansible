@@ -1,0 +1,18 @@
+---  
+redis_password: Mimi@123
+sentinel_password: Mimi@123
+
+headers_redis_sentinel_checklist: >- 
+  IP,
+  check_general_conf_Redis,check_cluster_conf_Redis,
+  check_sentinel_conf
+
+redis_sentinel_task_list:
+  - check_general_conf_Redis
+  - check_cluster_conf_Redis
+  - check_sentinel_conf
+
+headers_redis_sentinel_checklist_csv_line: >- 
+  {{ inventory_hostname }},
+  {{ check_general_conf_Redis }},{{ check_cluster_conf_Redis }},
+  {{ check_sentinel_conf }}

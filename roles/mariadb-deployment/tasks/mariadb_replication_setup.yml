@@ -1,0 +1,139 @@
+---
+# Xác định server_id nhỏ nhất để chọn node master
+- name: Determine the smallest server_id (master)
+  set_fact:
+    my_server_id: "{{ inventory_hostname.split('.')[-1] | int }}"
+    min_server_id: "{{ groups['MariaDB_servers'] | map('split', '.') | map('last') | map('int') | min }}"
+    is_master: "{{ (inventory_hostname.split('.')[-1] | int) == (groups['MariaDB_servers'] | map('split', '.') | map('last') | map('int') | min) }}"
+
+# Tạo user admin với đầy đủ quyền trên các host chỉ định
+- name: Create admin user
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      CREATE OR REPLACE USER 'admin'@'10.%' IDENTIFIED BY '{{ mariadb_root_password }}';
+      CREATE OR REPLACE USER 'admin'@'192.%' IDENTIFIED BY '{{ mariadb_root_password }}';
+      CREATE OR REPLACE USER 'admin'@'localhost' IDENTIFIED BY '{{ mariadb_root_password }}';
+      GRANT ALL PRIVILEGES ON *.* TO 'admin'@'10.%' WITH GRANT OPTION;
+      GRANT ALL PRIVILEGES ON *.* TO 'admin'@'192.%' WITH GRANT OPTION;
+      GRANT ALL PRIVILEGES ON *.* TO 'admin'@'localhost' WITH GRANT OPTION;
+      FLUSH PRIVILEGES;"
+  args:
+    executable: /bin/bash
+
+# Tạo user replication dùng cho quá trình đồng bộ dữ liệu giữa master và slave
+- name: Create replication user 
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      CREATE OR REPLACE USER '{{ mariadb_replica_user }}'@'{{ mariadb_replica_host }}' IDENTIFIED BY '{{ mariadb_replica_password }}';
+      GRANT REPLICATION SLAVE ON *.* TO '{{ mariadb_replica_user }}'@'{{ mariadb_replica_host }}' IDENTIFIED BY '{{ mariadb_replica_password }}' WITH GRANT OPTION;
+      FLUSH PRIVILEGES;"
+  args:
+    executable: /bin/bash
+
+# Tạo user maxscale để proxy hoặc các công cụ trung gian truy cập database
+- name: Create maxcale user
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      CREATE OR REPLACE USER '{{ maxscale_user }}'@'%' IDENTIFIED BY '{{ maxscale_password }}';
+      GRANT ALL PRIVILEGES ON *.* TO '{{ maxscale_user }}'@'%' WITH GRANT OPTION;
+      FLUSH PRIVILEGES;"
+  args:
+    executable: /bin/bash
+
+# Lấy trạng thái replication (binlog file, position) trên node master
+- name: Get master replication status
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "SHOW MASTER STATUS\G"
+  register: master_status_result
+  when: is_master
+  args:
+    executable: /bin/bash
+
+# Phân tích kết quả trả về để lấy tên file binlog và vị trí log hiện tại trên master
+- name: Parse master log file and log pos (only on master)
+  set_fact:
+    master_log_file: "{{ master_status_result.stdout_lines | map('trim') | select('search', '^File:') | list | first | regex_replace('File: ', '') }}"
+    master_log_pos: "{{ master_status_result.stdout_lines | map('trim') | select('search', '^Position:') | list | first | regex_replace('Position: ', '') | int }}"
+  when: is_master
+
+# Lấy thông tin host, file binlog và vị trí log của master để cấu hình replication cho slave
+- name: Get master host info (only on slave)
+  set_fact:
+    master_host: "{{ groups['MariaDB_servers'] | sort | first }}"
+    master_log_file: "{{ hostvars[groups['MariaDB_servers'] | sort | first].master_log_file }}"
+    master_log_pos: "{{ hostvars[groups['MariaDB_servers'] | sort | first].master_log_pos }}"
+  when: not is_master
+
+# Tạm thời tắt chế độ strict GTID trên slave để thực hiện các thao tác reset replication
+- name: Disable GTID strict mode temporarily on slave
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      SET GLOBAL gtid_strict_mode = 0;"
+  when: not is_master
+  args:
+    executable: /bin/bash
+
+# Dừng slave, reset toàn bộ trạng thái replication và xóa thông tin GTID trên slave
+- name: Reset slave and clear GTID state
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      STOP SLAVE;
+      RESET SLAVE ALL;
+      RESET MASTER;
+      SET GLOBAL gtid_slave_pos = '';"
+  when: not is_master
+  args:
+    executable: /bin/bash
+
+# Cấu hình thông tin replication trên slave và khởi động quá trình đồng bộ
+- name: Configure replication on slave
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      CHANGE MASTER TO
+        MASTER_HOST='{{ master_host }}',
+        MASTER_USER='{{ mariadb_replica_user }}',
+        MASTER_PASSWORD='{{ mariadb_replica_password }}',
+        MASTER_PORT=3306,
+        MASTER_LOG_FILE='{{ master_log_file }}',
+        MASTER_LOG_POS={{ master_log_pos }},
+        MASTER_CONNECT_RETRY=10,
+        MASTER_USE_GTID=slave_pos;
+      START SLAVE;
+      FLUSH PRIVILEGES;"
+  when: not is_master
+  args:
+    executable: /bin/bash
+
+# Chờ slave đồng bộ dữ liệu ban đầu trong 30 giây
+- name: Wait for initial replication sync (30 seconds)
+  wait_for:
+    timeout: 30
+  when: not is_master
+
+# Bật lại chế độ strict GTID trên slave sau khi cấu hình xong replication
+- name: Re-enable GTID strict mode
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "
+      SET GLOBAL gtid_strict_mode = 1;"
+  when: not is_master
+  args:
+    executable: /bin/bash
+
+# Kiểm tra trạng thái replication trên slave và lọc ra các thông tin quan trọng
+- name: Check replication status on slave
+  shell: |
+    mysql -u root -p'{{ mariadb_root_password }}' -e "SHOW SLAVE STATUS\G" | egrep 'Slave_IO_Running|Slave_SQL_Running|Last_Error|Seconds_Behind_Master'
+  register: slave_status
+  when: not is_master
+  args:
+    executable: /bin/bash
+
+# Hiển thị các thông tin trạng thái replication quan trọng trên slave
+- name: Show important replication status
+  debug:
+    msg:
+      - "{{ slave_status.stdout_lines | select('search', 'Slave_IO_Running') | list | first | default('Slave_IO_Running: N/A') }}"
+      - "{{ slave_status.stdout_lines | select('search', 'Slave_SQL_Running') | list | first | default('Slave_SQL_Running: N/A') }}"
+      - "{{ slave_status.stdout_lines | select('search', 'Seconds_Behind_Master') | list | first | default('Seconds_Behind_Master: N/A') }}"
+      - "{{ slave_status.stdout_lines | select('search', 'Last_Error') | list | first | default('Last_Error:') }}"
+  when: not is_master

@@ -1,0 +1,40 @@
+---
+# Cài đặt gói unixODBC cần thiết cho MaxScale
+- name: Install UnixODBC
+  yum:
+    name: unixODBC
+    state: present
+
+# Cài đặt các gói RPM phụ thuộc và MaxScale nếu chưa có trên hệ thống
+- name: Install RPM dependencies and MaxScale
+  shell: |
+    if ! rpm -q {{ item | regex_replace('\.rpm$','') }}; then
+      rpm -ivh {{ path_installation_files }}/{{ item }}
+    else
+      echo "Package {{ item }} is already installed"
+    fi
+  args:
+    executable: /bin/bash
+  register: rpm_install
+  changed_when: "'is already installed' not in rpm_install.stdout"
+  loop:
+    - libmicrohttpd-0.9.72-5.el9.x86_64.rpm
+    - librdkafka-1.6.1-102.el9.x86_64.rpm
+    - info-6.7-15.el9.x86_64.rpm
+    - maxscale-24.02.4-1.rhel.9.x86_64.rpm
+
+# Copy file cấu hình maxscale.cnf từ template vào /etc/maxscale.cnf
+- name: Coppy my.cnf configuration file
+  template:
+    src: maxscale.cnf.j2
+    dest: /etc/maxscale.cnf
+    owner: root
+    group: root
+    mode: '0644'
+
+# Khởi động và bật dịch vụ MaxScale khi khởi động hệ thống
+- name: Start MaxScale service
+  service:
+    name: maxscale
+    state: started
+    enabled: yes

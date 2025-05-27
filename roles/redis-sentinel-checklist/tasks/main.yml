@@ -1,0 +1,10 @@
+---
+- name: Execute all Redis-Sentinel checklist tasks
+  include_tasks: "{{ item }}.yml"
+  loop: "{{ redis_sentinel_task_list }}"
+
+- name: Store Redis-Sentinel checklist results
+  set_fact:
+    redis_sentinel_checklist_results:
+      headers_redis_sentinel_checklist: "{{ headers_redis_sentinel_checklist }}"
+      headers_redis_sentinel_checklist_csv_line: "{{ headers_redis_sentinel_checklist_csv_line }}"

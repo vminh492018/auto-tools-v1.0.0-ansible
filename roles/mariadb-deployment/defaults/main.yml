@@ -1,0 +1,21 @@
+---
+path_installation_files: /home/minhvx/mariadb-deployment
+minimum_required_open_files: 65536
+
+minimum_supported_os_versions:
+  CentOS: "7.9"
+  Ubuntu: "20.04"
+  Rocky: "9.2"
+
+required_ports:
+  - 3306  # MariaDB
+  - 3006  # MaxScale
+
+mariadb_data_dir: /u01
+mariadb_log_dir: /logs
+mariadb_root_password: "mariadb@#2025"
+mariadb_replica_user: "tdht"
+mariadb_replica_password: "mariadb@2468"
+mariadb_replica_host: "%"
+maxscale_user: "maxscale"
+maxscale_password: "maxscale@2468"

@@ -1,0 +1,59 @@
+[client]
+socket=/u01/mariadb/data/mysql.sock 
+
+[mysqld]
+server_id={{ inventory_hostname.split('.')[-1] | int }}
+bind-address=0.0.0.0
+socket=/u01/mariadb/data/mysql.sock
+datadir=/u01/mariadb/data
+port=3306
+max_connections=3500
+skip-name-resolve
+skip-networking=0
+symbolic-links=0
+
+log-error=/logs/mysql/mysqld-error.log
+log_bin=/logs/bin-logs/mariadb-bin
+log_bin_index=/logs/bin-logs/mariadb-bin.index
+binlog_format=ROW
+expire_logs_days=7
+log_slave_updates=1 
+max_binlog_size=512M
+binlog-annotate-row-events=OFF
+
+slow_query_log=ON
+slow_query_log_file=/logs/mysql/mysqld.slow.log
+long_query_time=10.0 
+
+session_track_system_variables=last_gtid,autocommit,character_set_client,character_set_connection,character_set_results,time_zone
+
+innodb_autoinc_lock_mode=1
+innodb_buffer_pool_size={{ (ansible_memtotal_mb * 0.6) | int }}M
+innodb_buffer_pool_chunk_size=134217728
+innodb_log_file_size=256M
+innodb_log_buffer_size=512M  
+innodb_file_per_table=1
+innodb_open_files=65536
+innodb_max_dirty_pages_pct=75
+
+{% if (inventory_hostname.split('.')[-1] | int) == (groups['MariaDB_servers'] | map('split', '.') | map('last') | map('int') | min) %}
+# Master server
+innodb_flush_log_at_trx_commit=1
+sync_binlog=1
+{% else %}
+# Slave servers
+innodb_flush_log_at_trx_commit=0
+sync_binlog=0
+{% endif %}
+
+max_allowed_packet=512M
+lower_case_table_names=1
+autocommit=1
+interactive_timeout=3600
+wait_timeout=3600
+
+gtid_strict_mode=1
+gtid_domain_id=0
+
+[mysqld_safe]
+log-error=/logs/mysql/mysqld-error.log

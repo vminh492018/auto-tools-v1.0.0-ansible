@@ -1,0 +1,6 @@
+info-6.7-15.el9.x86_64.rpm
+libmicrohttpd-0.9.72-5.el9.x86_64.rpm
+librdkafka-1.6.1-102.el9.x86_64.rpm
+mariadb-10.6.21-rhel-9-x86_64-rpms.tar
+maxscale-24.02.4-1.rhel.9.x86_64.rpm
+RPM-GPG-KEY-MariaDB

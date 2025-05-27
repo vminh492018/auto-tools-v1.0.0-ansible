@@ -1,0 +1,45 @@
+---
+- name: Check if cron.deny file is removed
+  stat:
+    path: /etc/cron.deny
+  register: cron_deny_stat
+
+- name: Report on cron.deny status
+  debug:
+    msg: "cron.deny file is removed [PASS]"
+  when: not cron_deny_stat.stat.exists
+
+- name: Report on cron.deny status if file exists
+  debug:
+    msg: "cron.deny file exists [FAIL]"
+  when: cron_deny_stat.stat.exists
+
+- name: Check if cron.allow file is created
+  stat:
+    path: /etc/cron.allow
+  register: cron_allow_stat
+
+- name: Report on cron.allow status
+  debug:
+    msg: "cron.allow file is created [PASS]"
+  when: cron_allow_stat.stat.exists
+
+- name: Report on cron.allow status if file is missing
+  debug:
+    msg: "cron.allow file is missing [FAIL]"
+  when: not cron_allow_stat.stat.exists
+
+- name: Set facts after checking .....
+  block:
+    - name: PASS if all conditions are met
+      set_fact:
+        check_cron_files: "PASS"
+      when:
+        - not cron_deny_stat.stat.exists 
+        - cron_allow_stat.stat.exists     
+
+    - name: FAIL if any condition fails
+      set_fact:
+        check_cron_files: "FAIL"
+      when:
+        - cron_deny_stat.stat.exists or not cron_allow_stat.stat.exists  

@@ -1,0 +1,14 @@
+---
+path_installation_files: /home/minhvx/redis-deployment
+
+minimum_supported_os_versions:
+  CentOS: "7.9"
+  Ubuntu: "20.04"
+  Rocky: "9.2"
+
+required_ports:
+  - 8371  # Sentinel
+  - 8379  # Redis
+
+data_dir: /u01
+logs_dir: /logs

@@ -1,0 +1,30 @@
+---
+- name: Checking servers.....
+  block:
+    - name: Checking server is VMware/Physical....
+      command: cat /sys/class/dmi/id/sys_vendor
+      register: sys_vendor_result
+      ignore_errors: true
+
+    - name: Check if /var is in /etc/fstab
+      command: grep -w /var /etc/fstab
+      register: var_partition_result
+      failed_when: false
+
+- name: Set facts after checking servers.....
+  block:
+    - name: PASS if /var partition is found in /etc/fstab
+      set_fact:
+        check_var_partition_conf: "PASS"
+      when: var_partition_result.rc == 0
+
+    - name: FAIL if /var partition is not found in /etc/fstab
+      set_fact:
+        check_var_partition_conf: "FAIL - /var partition is not found in /etc/fstab"
+      when: var_partition_result.rc != 0
+
+- name: Detailed results are output after the checking process is finished....
+  debug:
+    msg: 
+      - "{% if 'vmware' in sys_vendor_result.stdout | lower | replace(',', '') %}VMware virtualized server does not need /var partition in /etc/fstab ==> OK{% else %}Server isn't VMware{% endif %}"
+      - "{% if var_partition_result.rc != 0 %}/var partition not found in /etc/fstab [FAIL]{% else %}/var partition is in /etc/fstab [PASS]{% endif %}"

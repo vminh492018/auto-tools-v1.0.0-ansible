@@ -1,0 +1,74 @@
+---
+  - name: Ensure sentinel.conf file exists
+    stat:
+      path: /u01/redis/sentinel.conf
+    register: sentinel_conf_file
+
+  - name: Fail if sentinel.conf file does not exist
+    fail:
+      msg: "Sentinel configuration file not found at /u01/redis/sentinel.conf"
+    when: not sentinel_conf_file.stat.exists
+
+  - name: Read sentinel.conf file content
+    slurp:
+      path: /u01/redis/sentinel.conf
+    register: sentinel_conf_content
+
+  - name: Decode sentinel.conf content
+    set_fact:
+      sentinel_conf_lines: "{{ (sentinel_conf_content.content | b64decode).splitlines() }}"
+
+  - name: Initialize sentinel_config_dict
+    set_fact:
+      sentinel_config_dict: {}
+
+  - name: Parse Redis Sentinel configuration into a dictionary
+    set_fact:
+      sentinel_config_dict: >-
+        {{
+          sentinel_config_dict | combine(
+            { config_line.split()[0]: ' '.join(config_line.split()[1:]) }
+          )
+        }}
+    loop: "{{ sentinel_conf_lines }}"
+    loop_control:
+      loop_var: config_line
+    when: config_line.strip() != '' and not config_line.startswith('#')
+
+  - name: Debug parsed Sentinel configuration
+    debug:
+      var: sentinel_config_dict
+
+  - name: Validate Sentinel configuration
+    block:
+      - name: PASS if all values match expected configurations
+        set_fact:
+          check_sentinel_conf: "PASS"
+        when:
+          - "'bind' in sentinel_config_dict and sentinel_config_dict.bind == ansible_default_ipv4.address"
+          - "'logfile' in sentinel_config_dict and sentinel_config_dict.logfile | trim('\"') != ''"
+          - "'pidfile' in sentinel_config_dict and sentinel_config_dict.pidfile | trim('\"') != ''"
+          - "'sentinel monitor' in sentinel_config_dict and sentinel_config_dict['sentinel monitor'] != ''"
+          - "'sentinel auth-pass' in sentinel_config_dict and sentinel_config_dict['sentinel auth-pass'] != ''"
+          - "'requirepass' in sentinel_config_dict and sentinel_config_dict.requirepass | trim('\"') != ''"
+          - "'sentinel down-after-milliseconds' in sentinel_config_dict and sentinel_config_dict['sentinel down-after-milliseconds'] == '30000'"
+          - "'sentinel failover-timeout' in sentinel_config_dict and sentinel_config_dict['sentinel failover-timeout'] == '180000'"
+
+      - name: FAIL if any value doesn't match
+        set_fact:
+          check_sentinel_conf: "FAIL"
+        when: check_sentinel_conf is not defined
+
+  - name: Output Sentinel configuration check result
+    debug:
+      msg:
+        - "Sentinel configuration check: {{ check_sentinel_conf }}"
+        - "Current values:"
+        - "bind: {{ sentinel_config_dict.bind | default('N/A') }} (expected: {{ ansible_default_ipv4.address }})"
+        - "logfile: {{ sentinel_config_dict.logfile | default('N/A') | trim('\"') }} (expected: non-empty path)"
+        - "pidfile: {{ sentinel_config_dict.pidfile | default('N/A') | trim('\"') }} (expected: non-empty path)"
+        - "sentinel monitor: {{ sentinel_config_dict['sentinel monitor'] | default('N/A') }} (expected: non-empty)"
+        - "sentinel auth-pass: {{ sentinel_config_dict['sentinel auth-pass'] | default('N/A') }} (expected: non-empty)"
+        - "requirepass: {{ sentinel_config_dict.requirepass | default('N/A') | trim('\"') }} (expected: non-empty)"
+        - "sentinel down-after-milliseconds: {{ sentinel_config_dict['sentinel down-after-milliseconds'] | default('N/A') }} (expected: 30000)"
+        - "sentinel failover-timeout: {{ sentinel_config_dict['sentinel failover-timeout'] | default('N/A') }} (expected: 180000)"

@@ -1,0 +1,56 @@
+---
+- name: Check if /etc/bashrc exists
+  stat:
+    path: /etc/bashrc
+  register: bashrc_file
+
+- name: Check cmdlog configuration in /etc/bashrc
+  shell: |
+    if grep -v ^# /etc/bashrc | grep "local6.debug" | grep ctty; then
+      echo "CMDLog configured to new standard [PASS]"
+    else
+      echo "CMDLog not configured to new standard [FAIL]"
+    fi
+  register: cmdlog_check
+  when: bashrc_file.stat.exists
+  ignore_errors: true
+
+- name: Display cmdlog configuration status
+  debug:
+    msg: >
+      {% if bashrc_file.stat.exists %}
+        {{ cmdlog_check.stdout }}
+      {% else %}
+        File /etc/bashrc does not exist [FAIL]
+      {% endif %}
+
+- name: Check logrotate configuration for cmdlog
+  shell: |
+    entries=("/var/log/cmdlog.log" "{" "compress" "weekly" "rotate 12" "sharedscripts" "postrotate" "/bin/kill -HUP \`cat /var/run/syslogd.pid 2> /dev/null\` 2> /dev/null || true" "endscript" "}")
+    for entry in "${entries[@]}"; do
+        if grep -v ^# /etc/logrotate.d/cmdlog | grep -qw "$entry"; then
+            echo "$entry [PASS]"
+        else
+            echo "$entry [FAIL]"
+        fi
+    done
+  register: logrotate_check
+  ignore_errors: true
+  args:
+    executable: /bin/bash
+
+- name: Set facts after checking.......
+  block:
+    - name: PASS if all entries are PASS
+      set_fact:
+        check_cmdlog_conf_logratate_for_it: "PASS"
+      when: "'[FAIL]' not in logrotate_check.stdout"
+
+    - name: FAIL if any entry is FAIL
+      set_fact:
+        check_cmdlog_conf_logratate_for_it: "FAIL"
+      when: "'[FAIL]' in logrotate_check.stdout"
+      
+- name: Detailed results are output after the checking process is finished....
+  debug:
+    msg: "{{ logrotate_check.stdout_lines }}"

@@ -1,0 +1,54 @@
+[maxscale]
+threads=auto
+
+{% for host in groups['MariaDB_servers'] %}
+[server{{ loop.index }}]
+type=server
+address={{ hostvars[host]['ansible_host'] | default(host) }}
+port=3306
+protocol=MariaDBBackend
+{% endfor %}
+
+[mariadb-monitor]
+type=monitor
+module=mariadbmon
+
+servers={% for host in groups['MariaDB_servers'] %}server{{ loop.index }}{% if not loop.last %},{% endif %}{% endfor %}
+
+user={{ maxscale_user }}
+password={{ maxscale_password }}
+monitor_interval=1000ms
+backend_connect_timeout=3s
+backend_read_timeout=3s
+backend_write_timeout=3s
+failcount=1
+auto_failover=ON
+auto_rejoin=ON
+enforce_read_only_slaves=ON
+enforce_simple_topology=ON
+verify_master_failure=ON
+master_failure_timeout=10s
+switchover_timeout=60s
+replication_user={{ mariadb_replica_user }}
+replication_password={{ mariadb_replica_password }}
+
+[Read-Write-Service]
+type=service
+router=readwritesplit
+
+servers={% for host in groups['MariaDB_servers'] %}server{{ loop.index }}{% if not loop.last %},{% endif %}{% endfor %}
+
+user={{ maxscale_user }}
+password={{ maxscale_password }}
+causal_reads=global
+connection_keepalive=3600ms
+master_reconnection=true
+master_failure_mode=fail_on_write
+retry_failed_reads=true
+causal_reads_timeout=5000ms
+
+[Read-Write-Listener]
+type=listener
+service=Read-Write-Service
+protocol=MariaDBClient
+port=3006

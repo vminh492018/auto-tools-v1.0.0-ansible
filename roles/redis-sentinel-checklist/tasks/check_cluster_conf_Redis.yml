@@ -1,0 +1,75 @@
+---
+- name: Check if Redis is running in cluster mode
+  command: /u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a "{{ redis_password }}" info server | grep "cluster_enabled"
+  register: cluster_mode
+  changed_when: false
+  ignore_errors: true
+
+- name: Parse cluster mode status
+  set_fact:
+    is_cluster_mode: "{{ 'cluster_enabled:1' in cluster_mode.stdout }}"
+
+- name: Skip cluster-specific checks if not in cluster mode
+  block:
+    - debug:
+        msg: "Skipping cluster-specific checks as Redis is not in cluster mode."
+    - set_fact:
+        check_cluster_conf_Redis: "N/A - Not a cluster Redis"
+  when: not is_cluster_mode
+
+- name: Check Redis cluster configuration using redis-cli
+  command: /u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a "{{ redis_password }}" config get {{ item }}
+  register: cluster_config
+  loop:
+    - cluster-config-file
+    - cluster-node-timeout
+    - cluster-migration-barrier
+    - cluster-require-full-coverage
+  loop_control:
+    loop_var: config_item
+  when: is_cluster_mode
+  changed_when: false
+
+- name: Parse Redis cluster configuration into a dictionary
+  set_fact:
+    cluster_config_dict: >-
+      {{
+        cluster_config_dict | default({}) | combine(
+          { item_redis_cluster.item: item_redis_cluster.stdout_lines[1] }
+        )
+      }}
+  loop: "{{ cluster_config.results }}"
+  loop_control:
+    loop_var: item_redis_cluster
+  when: 
+    - is_cluster_mode
+    - item_redis_cluster.stdout_lines is defined and item_redis_cluster.stdout_lines | length > 1
+
+- name: Validate Redis cluster configuration
+  block:
+    - name: PASS if all values match expected configurations
+      set_fact:
+        check_cluster_conf_Redis: "PASS"
+      when:
+        - cluster_config_dict['cluster-config-file'] is defined and cluster_config_dict['cluster-config-file'] != ""
+        - cluster_config_dict['cluster-node-timeout'] == "5000"
+        - cluster_config_dict['cluster-migration-barrier'] == "1"
+        - cluster_config_dict['cluster-require-full-coverage'] == "yes"
+
+    - name: FAIL if any value doesn't match
+      set_fact:
+        check_cluster_conf_Redis: "FAIL"
+      when: check_cluster_conf_Redis is not defined and is_cluster_mode
+
+  when: is_cluster_mode
+
+- name: Output Redis cluster configuration check result
+  debug:
+    msg:
+      - "Redis cluster configuration check: {{ check_cluster_conf_Redis }}"
+      - "Current values:"
+      - "cluster-config-file: {{ cluster_config_dict['cluster-config-file'] | default('N/A') }} (expected: non-empty path)"
+      - "cluster-node-timeout: {{ cluster_config_dict['cluster-node-timeout'] | default('N/A') }} (expected: 5000)"
+      - "cluster-migration-barrier: {{ cluster_config_dict['cluster-migration-barrier'] | default('N/A') }} (expected: 1)"
+      - "cluster-require-full-coverage: {{ cluster_config_dict['cluster-require-full-coverage'] | default('N/A') }} (expected: yes)"
+  when: is_cluster_mode

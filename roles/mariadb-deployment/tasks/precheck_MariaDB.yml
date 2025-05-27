@@ -1,0 +1,97 @@
+---
+- name: Gather system facts
+  ansible.builtin.setup:
+    gather_subset: ['all']
+
+# Check OS Version
+- name: Check OS version requirements
+  block:
+    - name: CentOS version
+      fail:
+        msg: "CentOS version must be >= {{ minimum_supported_os_versions.CentOS }}"
+      when: 
+        - ansible_distribution == "CentOS"
+        - ansible_distribution_version is version(minimum_supported_os_versions.CentOS, '<')
+    
+    - name: Ubuntu version
+      fail:
+        msg: "Ubuntu version must be >= {{ minimum_supported_os_versions.Ubuntu }}"
+      when:
+        - ansible_distribution == "Ubuntu"
+        - ansible_distribution_version is version(minimum_supported_os_versions.Ubuntu, '<')
+    
+    - name: Rocky version
+      fail:
+        msg: "Rocky version must be >= {{ minimum_supported_os_versions.Rocky }}"
+      when:
+        - ansible_distribution == "Rocky"
+        - ansible_distribution_version != minimum_supported_os_versions.Rocky
+
+# Check data and log directories
+- name: Check data and log directories
+  block:
+    - name: Check data directory exists
+      stat:
+        path: "{{ mariadb_data_dir }}"
+      register: data_dir_stat
+
+    - name: Fail if data directory does not exist
+      fail:
+        msg: "Data directory {{ mariadb_data_dir }} does not exist!"
+      when: not data_dir_stat.stat.exists
+
+    - name: Check log directory exists
+      stat:
+        path: "{{ mariadb_log_dir }}"
+      register: log_dir_stat
+
+    - name: Fail if log directory does not exist
+      fail:
+        msg: "Log directory {{ mariadb_log_dir }} does not exist!"
+      when: not log_dir_stat.stat.exists
+
+# Check Ports
+- name: Check ports MariaDB and MaxScale
+  block:
+    - name: Check if required ports are available
+      wait_for:
+        port: "{{ port }}"
+        state: stopped
+        timeout: 5
+      loop: "{{ required_ports }}"
+      loop_control:
+        loop_var: port
+      register: port_check
+      ignore_errors: true
+
+    - name: Fail if any required port is in use
+      fail:
+        msg: "Ports in use: {{ port_check.results | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='port') | list | join(', ') }}"
+      when: port_check.results | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='port') | list | length > 0
+
+# Check System Limits
+- name: Check max open files
+  block:
+    - name: Get current max open files
+      command: sysctl fs.file-max
+      register: file_max
+      changed_when: false
+
+    - name: Verify max open files limit
+      fail:
+        msg: "System max open files ({{ file_max.stdout.split('=')[1] | trim }}) is less than required ({{ min_open_files }})"
+      when: (file_max.stdout.split('=')[1] | trim | int) < minimum_required_open_files
+
+# Check existing MariaDB processes
+- name: Check MariaDB processes
+  block:
+    - name: Check for running MariaDB server processes
+      shell: |
+        pgrep -x mysqld || pgrep -x mariadbd || true
+      register: mariadb_processes
+      changed_when: false
+
+    - name: Fail if MariaDB server is running
+      fail:
+        msg: "MariaDB server is already running on the system"
+      when: mariadb_processes.stdout | trim != ""

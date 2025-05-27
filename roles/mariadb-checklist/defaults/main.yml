@@ -1,0 +1,41 @@
+---
+mysql_root_password: "mariadb@#2025"
+supported_versions: ['10.11', '11.4', '10.6']
+headers_mariadb_checklist: >- 
+  inventory_hostname,
+  check_LTS_version,check_partitions,
+  check_crontab_backup_job,check_replication_status,
+  check_gcache_size,check_storage_engine,
+  check_buffer_pool,check_binlog_conf,
+  check_innodb,check_performance_schema_max_connections,
+  check_audit_log_configuration,check_slowlog_for_bad_SQLqueries,
+  check_for_fragmented_tables,check_large_tables_without_partitions,
+  check_for_tables_without_primary
+
+mariadb_checklist_task_list:
+  - check_LTS_version
+  - check_partitions
+  - check_crontab_backup_job
+  - check_replication_status
+  - check_gcache_size
+  - check_storage_engine
+  - check_buffer_pool
+  - check_binlog_conf
+  - check_innodb
+  - check_performance_schema_max_connections
+  - check_audit_log_configuration
+  - check_slowlog_for_bad_SQLqueries
+  - check_for_fragmented_tables
+  - check_large_tables_without_partitions
+  - check_for_tables_without_primary
+
+mariadb_checklist_csv_line: >-
+  {{ inventory_hostname }},
+  {{ check_LTS_version }},{{ check_partitions }},
+  {{ check_crontab_backup_job }},{{ check_replication_status }},
+  {{ check_gcache_size }},{{ check_storage_engine }},
+  {{ check_buffer_pool }},{{ check_binlog_conf }},
+  {{ check_innodb }},{{ check_performance_schema_max_connections }},
+  {{ check_audit_log_configuration }},{{ check_slowlog_for_bad_SQLqueries }},
+  {{ check_for_fragmented_tables }},{{ check_large_tables_without_partitions }},
+  {{ check_for_tables_without_primary }}

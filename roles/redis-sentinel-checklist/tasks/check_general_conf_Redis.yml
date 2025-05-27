@@ -1,0 +1,98 @@
+---
+- name: Fetch all Redis configuration using redis-cli
+  command: /u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a "{{ redis_password }}" config get "*"
+  register: redis_all_config
+  changed_when: false
+  no_log: true
+
+- name: Initialize redis_config_dict
+  set_fact:
+    redis_config_dict: {}
+
+- name: Parse Redis configuration into a dictionary
+  set_fact:
+    redis_config_dict: >-
+      {{
+        redis_config_dict | combine(
+          { config_item[0]: config_item[1] }
+        )
+      }}
+  loop: "{{ redis_all_config.stdout_lines | batch(2) | list }}"
+  loop_control:
+    loop_var: config_item
+
+- name: Validate Redis configuration
+  block:
+    - name: PASS if all values match expected configurations
+      set_fact:
+        check_general_conf_Redis: "PASS"
+      when:
+        - redis_config_dict['bind'] == ansible_default_ipv4.address | default(redis_config_dict['bind'])
+        - redis_config_dict['tcp-backlog'] == "10240"
+        - redis_config_dict['timeout'] == "300"
+        - redis_config_dict['tcp-keepalive'] == "300"
+        - redis_config_dict['loglevel'] == "notice"
+        - redis_config_dict['logfile'] is defined and redis_config_dict['logfile'] != ""
+        - redis_config_dict['databases'] | int > 0
+        - redis_config_dict['save'].find("900 1") != -1
+        - redis_config_dict['save'].find("300 10") != -1
+        - redis_config_dict['save'].find("60 10000") != -1
+        - redis_config_dict['stop-writes-on-bgsave-error'] == "yes"
+        - redis_config_dict['rdb-save-incremental-fsync'] == "yes"
+        - redis_config_dict['dbfilename'] is defined and redis_config_dict['dbfilename'] != ""
+        - redis_config_dict['appendfilename'] is defined and redis_config_dict['appendfilename'] != ""
+        - redis_config_dict['dir'] is defined and redis_config_dict['dir'] != ""
+        - redis_config_dict['masterauth'] is defined and redis_config_dict['masterauth'] != ""
+        - redis_config_dict['requirepass'] is defined and redis_config_dict['requirepass'] != ""
+        - redis_config_dict['replica-read-only'] == "yes"
+        - redis_config_dict['min-replicas-to-write'] == "1"
+        - redis_config_dict['min-replicas-max-lag'] == "10"
+        - redis_config_dict['repl-timeout'] | int >= 60
+        - redis_config_dict['repl-ping-replica-period'] == "10"
+        - redis_config_dict['slave-serve-stale-data'] == "no"
+        - redis_config_dict['client-output-buffer-limit'] is defined and redis_config_dict['client-output-buffer-limit'] != ""
+        - redis_config_dict['repl-backlog-size'] == "536870912"
+        - redis_config_dict['slowlog-max-len'] == "512"
+        - redis_config_dict['maxmemory'] is defined and redis_config_dict['maxmemory'] != ""
+        - redis_config_dict['appendonly'] == "no"
+        - redis_config_dict['appendfsync'] == "everysec"
+        - redis_config_dict['io-threads'] == "4"
+
+    - name: FAIL if any value doesn't match
+      set_fact:
+        check_general_conf_Redis: "FAIL"
+      when: check_general_conf_Redis is not defined
+
+- name: Output Redis configuration check result
+  debug:
+    msg:
+      - "Redis general configuration check: {{ check_general_conf_Redis }}"
+      - "Current values:"
+      - "bind: {{ redis_config_dict['bind'] }} (expected: {{ ansible_default_ipv4.address | default('N/A') }})"
+      - "tcp-backlog: {{ redis_config_dict['tcp-backlog'] }} (expected: 10240)"
+      - "timeout: {{ redis_config_dict['timeout'] }} (expected: 300)"
+      - "tcp-keepalive: {{ redis_config_dict['tcp-keepalive'] }} (expected: 300)"
+      - "loglevel: {{ redis_config_dict['loglevel'] }} (expected: notice)"
+      - "logfile: {{ redis_config_dict['logfile'] }} (expected: non-empty path)"
+      - "databases: {{ redis_config_dict['databases'] }} (expected: > 0)"
+      - "save: {{ redis_config_dict['save'] }} (expected: '900 1', '300 10', '60 10000')"
+      - "stop-writes-on-bgsave-error: {{ redis_config_dict['stop-writes-on-bgsave-error'] }} (expected: yes)"
+      - "rdb-save-incremental-fsync: {{ redis_config_dict['rdb-save-incremental-fsync'] }} (expected: yes)"
+      - "dbfilename: {{ redis_config_dict['dbfilename'] }} (expected: non-default filename)"
+      - "appendfilename: {{ redis_config_dict['appendfilename'] }} (expected: non-default filename)"
+      - "dir: {{ redis_config_dict['dir'] }} (expected: non-empty path)"
+      - "masterauth: {{ redis_config_dict['masterauth'] }} (expected: non-empty)"
+      - "requirepass: {{ redis_config_dict['requirepass'] }} (expected: non-empty)"
+      - "replica-read-only: {{ redis_config_dict['replica-read-only'] }} (expected: yes)"
+      - "min-replicas-to-write: {{ redis_config_dict['min-replicas-to-write'] }} (expected: 1)"
+      - "min-replicas-max-lag: {{ redis_config_dict['min-replicas-max-lag'] }} (expected: 10)"
+      - "repl-timeout: {{ redis_config_dict['repl-timeout'] }} (expected: >= 60)"
+      - "repl-ping-replica-period: {{ redis_config_dict['repl-ping-replica-period'] }} (expected: 10)"
+      - "slave-serve-stale-data: {{ redis_config_dict['slave-serve-stale-data'] }} (expected: no)"
+      - "client-output-buffer-limit: {{ redis_config_dict['client-output-buffer-limit'] }} (expected: non-empty)"
+      - "repl-backlog-size: {{ redis_config_dict['repl-backlog-size'] }} (expected: 536870912)"
+      - "slowlog-max-len: {{ redis_config_dict['slowlog-max-len'] }} (expected: 512)"
+      - "maxmemory: {{ redis_config_dict['maxmemory'] }} (expected: non-empty)"
+      - "appendonly: {{ redis_config_dict['appendonly'] }} (expected: no)"
+      - "appendfsync: {{ redis_config_dict['appendfsync'] }} (expected: everysec)"
+      - "io-threads: {{ redis_config_dict['io-threads'] }} (expected: 4)"

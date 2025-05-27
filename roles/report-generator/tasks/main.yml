@@ -1,0 +1,17 @@
+---
+- name: Adding CSV headers to the report file......
+  ansible.builtin.lineinfile:
+    dest: "{{ csv_path }}/{{ csv_filename }}"
+    line: "{{ report_headers }}"
+    create: true
+    state: present
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate CSV report file after checking server ....
+  ansible.builtin.lineinfile:
+    dest: "{{ csv_path }}/{{ csv_filename }}"
+    line: "{{ report_data_line }}"
+    create: true
+    state: present
+  delegate_to: localhost

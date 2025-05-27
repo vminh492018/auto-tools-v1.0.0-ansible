@@ -1,0 +1,115 @@
+---
+- name: Initzialize MariaDB Installation
+  block:
+    # 1. Kiểm tra và tạo thư mục {{ path_installation_files }} nếu chưa tồn tại
+    - name: Ensure {{ path_installation_files }} exists
+      file:
+        path: "{{ path_installation_files }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # 2. Copy bộ cài từ role sang máy đích
+    - name: Copy installation files to target
+      copy:
+        src: "{{ item }}"
+        dest: "{{ path_installation_files }}"
+        owner: root
+        group: root
+        mode: '0644'
+      with_items:
+        - mariadb-10.6.21-rhel-9-x86_64-rpms.tar
+        - maxscale-24.02.4-1.rhel.9.x86_64.rpm
+        - RPM-GPG-KEY-MariaDB
+        - info-6.7-15.el9.x86_64.rpm
+        - libmicrohttpd-0.9.72-5.el9.x86_64.rpm
+        - librdkafka-1.6.1-102.el9.x86_64.rpm
+
+    # 3. Import GPG key
+    - name: Import MariaDB GPG key
+      command: rpm --import {{ path_installation_files }}/RPM-GPG-KEY-MariaDB
+      args:
+        chdir: "{{ path_installation_files }}"
+
+    # 4. Giải nén và phân quyền
+    - name: Extract MariaDB RPMs
+      command: tar -xvf mariadb-10.6.21-rhel-9-x86_64-rpms.tar
+      args:
+        chdir: "{{ path_installation_files }}"
+    
+    - name: Set ownership for extracted files
+      file:
+        path: "{{ path_installation_files }}/mariadb-10.6.21-rhel-9-x86_64-rpms"
+        state: directory
+        owner: root
+        group: root
+        recurse: yes
+
+- name: Install MariaDB 
+  block:
+    # 1. Setup repo MariaDB
+    - name: Setup MariaDB repository
+      command: ./setup_repository
+      args:
+        chdir: "{{ path_installation_files }}/mariadb-10.6.21-rhel-9-x86_64-rpms"
+
+    - name: Install MariaDB server, MariaDB backup
+      yum:
+        name:
+          - MariaDB-server
+          - MariaDB-backup
+        state: present
+
+    # 2 Copy file cấu hình my.cnf
+    - name: Coppy my.cnf configuration file
+      template:
+        src: my.cnf.j2
+        dest: /etc/my.cnf
+        owner: root
+        group: root
+        mode: '0644'
+
+    # 3. Tạo thư mục cho data, logs, bin-logs
+    - name: Create directories for data, logs, and bin-logs
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: mysql
+        group: mysql
+        mode: '0755'
+      with_items:
+        - /u01/mariadb/data/
+        - /logs/mysql/
+        - /logs/bin-logs/
+
+    # 4. Khởi tạo database nếu chưa có
+    - name: Initialize MariaDB data directory
+      command: mariadb-install-db --user=mysql --datadir=/u01/mariadb/data
+      args:
+        creates: /u01/mariadb/data/mysql
+
+    # 5. Khởi động dịch vụ MariaDB
+    - name: Start MariaDB service
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+- name: Essential steps to prepare MariaDB for first-time use.
+  block:
+    - name: Change root password
+      shell: |
+        mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ mariadb_root_password }}'; FLUSH PRIVILEGES;"
+      args:
+        executable: /bin/bash
+
+    - name: Reset replication state on all nodes
+      shell: |
+        mysql -u root -p'{{ mariadb_root_password }}' -e "
+          STOP SLAVE;
+          RESET SLAVE ALL;
+          RESET MASTER;"
+      ignore_errors: true
+      args:
+        executable: /bin/bash

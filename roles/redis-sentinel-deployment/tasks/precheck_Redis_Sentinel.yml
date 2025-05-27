@@ -1,0 +1,89 @@
+---
+- name: Gather system facts
+  ansible.builtin.setup:
+    gather_subset: ['all']
+
+# Check OS Version
+- name: Check OS version requirements
+  block:
+    - name: CentOS version
+      fail:
+        msg: "CentOS version must be >= {{ minimum_supported_os_versions.CentOS }}"
+      when: 
+        - ansible_distribution == "CentOS"
+        - ansible_distribution_version is version(minimum_supported_os_versions.CentOS, '<')
+    
+    - name: Ubuntu version
+      fail:
+        msg: "Ubuntu version must be >= {{ minimum_supported_os_versions.Ubuntu }}"
+      when:
+        - ansible_distribution == "Ubuntu"
+        - ansible_distribution_version is version(minimum_supported_os_versions.Ubuntu, '<')
+    
+    - name: Rocky version
+      fail:
+        msg: "Rocky version must be >= {{ minimum_supported_os_versions.Rocky }}"
+      when:
+        - ansible_distribution == "Rocky"
+        - ansible_distribution_version != minimum_supported_os_versions.Rocky
+
+# Check data and log directories
+- name: Check data and log directories
+  block:
+    - name: Check data directory exists
+      stat:
+        path: "{{ data_dir }}"
+      register: data_dir_stat
+
+    - name: Fail if data directory does not exist
+      fail:
+        msg: "Data directory {{ data_dir }} does not exist!"
+      when: not data_dir_stat.stat.exists
+
+    - name: Check log directory exists
+      stat:
+        path: "{{ logs_dir }}"
+      register: log_dir_stat
+
+    - name: Fail if log directory does not exist
+      fail:
+        msg: "Log directory {{ logs_dir }} does not exist!"
+      when: not log_dir_stat.stat.exists
+
+# Check Ports
+- name: Check ports Redis and Sentinel
+  block:
+    - name: Check if required ports are available
+      wait_for:
+        port: "{{ port }}"
+        state: stopped
+        timeout: 5
+      loop: "{{ required_ports }}"
+      loop_control:
+        loop_var: port
+      register: port_check
+      ignore_errors: true
+
+    - name: Fail if any required port is in use
+      fail:
+        msg: "Ports in use: {{ port_check.results | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='port') | list | join(', ') }}"
+      when: port_check.results | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='port') | list | length > 0
+
+# Check if Redis server is running
+- name: Check Redis-Sentinel processes
+  block:
+    - name: Check for running Redis and Sentinel processes
+      shell: |
+        ps aux | grep '[r]edis-server' || true
+      register: redis_processes
+      changed_when: false
+
+    - name: Detected Redis processes
+      debug:
+        var: redis_processes.stdout_lines
+      when: redis_processes.stdout | trim != ""
+
+    - name: Fail if Redis or Sentinel is running
+      fail:
+        msg: "Redis server or Sentinel processes are already running on this system"
+      when: redis_processes.stdout | trim != ""

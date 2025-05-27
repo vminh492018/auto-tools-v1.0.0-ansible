@@ -1,0 +1,39 @@
+---
+- name: Get and check system information
+  ansible.builtin.setup:
+    gather_subset:
+      - network
+      - hardware
+      - virtual
+
+- name: Set facts after checking.......    
+  block:
+# CentOS logic
+    - name: PASS if CentOS version is >= 7.9    
+      set_fact:
+        check_ip_version_kernel: "PASS"
+      when: ansible_distribution == "CentOS" and ansible_distribution_version is version("7.9", ">=")
+
+    - name: FAIL if CentOS version is < 7.9    
+      set_fact:
+        check_ip_version_kernel: "FAIL"
+      when: ansible_distribution == "CentOS" and ansible_distribution_version is version("7.9", "<")
+
+    # Ubuntu logic
+    - name: PASS for all Ubuntu versions    
+      set_fact:
+        check_ip_version_kernel: "PASS"
+      when: ansible_distribution == "Ubuntu"
+
+    # Other OS logic
+    - name: N/A for non-CentOS/Ubuntu systems
+      set_fact:
+        check_ip_version_kernel: "N/A"
+      when: ansible_distribution not in ["CentOS", "Ubuntu"]
+
+- name: Detailed results are output after the checking process is finished....
+  debug:
+    msg:
+      - "IP Address: {{ ansible_default_ipv4.address }}"
+      - "OS Version: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "Kernel Version: {{ ansible_kernel }}"

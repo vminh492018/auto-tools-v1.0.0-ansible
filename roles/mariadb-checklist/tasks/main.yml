@@ -1,0 +1,10 @@
+---
+- name: Execute all MariaDB checklist tasks
+  include_tasks: "{{ item }}.yml"
+  loop: "{{ mariadb_checklist_task_list }}"
+
+- name: Store OS checklist results
+  set_fact:
+    mariadb_checklist_results:
+      headers_mariadb_checklist: "{{ headers_mariadb_checklist }}"
+      mariadb_checklist_csv_line: "{{ mariadb_checklist_csv_line }}"

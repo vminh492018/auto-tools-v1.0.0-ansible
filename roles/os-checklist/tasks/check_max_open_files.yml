@@ -1,0 +1,34 @@
+---
+- name: Check max open files configuration
+  ansible.builtin.command: |
+    bash -c '
+    file_max=$(cat /proc/sys/fs/file-max)
+    file_max_conf=$(grep -v ^# /etc/sysctl.conf | grep -w fs.file-max)
+    if [[ -n "$file_max" && -n "$file_max_conf" ]]; then
+        echo "Max open file configuration found [PASS]"
+        echo "/proc/sys/fs/file-max = $file_max"
+        echo "$file_max_conf"
+    else
+        echo "Max open file configuration missing [FAIL]"
+        echo "/proc/sys/fs/file-max = $file_max"
+        echo "$file_max_conf"
+    fi
+    '
+  register: file_max_check
+  ignore_errors: true
+
+- name: Set facts after checking....
+  block:
+    - name: PASS if max open file configuration is found and valid
+      set_fact:
+        check_max_open_files: "PASS"
+      when: '"Max open file configuration found [PASS]" in file_max_check.stdout'
+
+    - name: FAIL if max open file configuration is missing or invalid
+      set_fact:
+        check_max_open_files: "FAIL"
+      when: '"Max open file configuration missing [FAIL]" in file_max_check.stdout'
+
+- name: Detailed results are output after the checking process is finished....
+  debug:
+    var: file_max_check.stdout_lines

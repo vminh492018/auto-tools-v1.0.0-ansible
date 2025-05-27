@@ -1,0 +1,114 @@
+---
+# 1. Kiểm tra và tạo thư mục {{ path_installation_files }} nếu chưa tồn tại
+- name: Ensure {{ path_installation_files }} exists
+  file:
+    path: "{{ path_installation_files }}"
+    state: directory
+    owner: root
+    group: root
+
+- name: Create Redis user
+  user:
+    name: redis
+    system: yes
+    shell: /sbin/nologin
+
+# 2. Copy bộ cài từ role sang máy đích
+- name: Copy installation files to target
+  copy:
+    src: "redis-6.2.12.tar.gz"
+    dest: "{{ path_installation_files }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+# 3. Giải nén và phân quyền
+- name: Extract Redis RPMs
+  command: tar -xzvf redis-6.2.12.tar.gz
+  args:
+    chdir: "{{ path_installation_files }}"
+
+# 4. Tạo thư mục chạy Redis, Sentinel
+- name: Copy redis directory to /u01
+  block:
+    - name: Ensure /u01/redis directory exists
+      file:
+        path: "/u01/redis"
+        state: directory
+        owner: redis
+        group: redis
+        mode: '0755'
+
+    - name: Copy redis files
+      copy:
+        src: "{{ path_installation_files }}/redis-6.2.12/"
+        dest: "/u01/redis"
+        owner: redis
+        group: redis
+        remote_src: yes
+        mode: '0755'
+
+# 5. Copy file cấu hình my.cnf
+- name: Coppy configuration file
+  template:
+    src: "{{ item.src }}"
+    dest: "/u01/redis/{{ item.dest }}"
+    owner: redis
+    group: redis
+    mode: '0644'
+  with_items:
+    - { src: 'redis.conf.j2', dest: 'redis.conf' }
+    - { src: 'sentinel.conf.j2', dest: 'sentinel.conf' }
+
+# 6, Start Redis and Sentinel services
+- name: Start Redis and wait for it to be ready
+  block:
+    - name: Start Redis server
+      become: true
+      become_method: sudo
+      become_user: redis
+      command: "./src/redis-server redis.conf"
+      args:
+        chdir: "/u01/redis"
+
+- name: Start Sentinel after Redis is ready
+  block:
+    - name: Start Sentinel
+      become: true
+      become_method: sudo
+      become_user: redis
+      command: "./src/redis-server sentinel.conf --sentinel"
+      args:
+        chdir: "/u01/redis"
+
+# 7. Verify Redis and Sentinel after deployment
+- name: Verify Redis is running and responding
+  shell: "/u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a 'Redis@2468' ping"
+  register: redis_status
+  retries: 3
+  delay: 5
+  until: redis_status.stdout == "PONG"
+  failed_when: redis_status.stdout != "PONG"
+  changed_when: false
+  no_log: true  # Hide password from logs
+
+- name: Verify Sentinel is running and responding
+  shell: "/u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8371 -a 'Redis@2468' ping"
+  register: sentinel_status
+  retries: 3
+  delay: 5
+  until: sentinel_status.stdout == "PONG"
+  failed_when: sentinel_status.stdout != "PONG"
+  changed_when: false
+  no_log: true  # Hide password from logs
+
+- name: Check Redis replication status
+  shell: "/u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a 'Redis@2468' info replication"
+  register: replication_status
+  failed_when: false
+  changed_when: false
+  no_log: true  # Hide password from logs
+
+- name: Redis replication status after checking....
+  debug:
+    var: replication_status.stdout_lines

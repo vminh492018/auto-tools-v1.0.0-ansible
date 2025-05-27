@@ -1,0 +1,10 @@
+---
+- name: Execute all OS checklist tasks
+  include_tasks: "{{ item }}.yml"
+  loop: "{{ os_checklist_task_list }}"
+
+- name: Store OS checklist results
+  set_fact:
+    os_checklist_results:
+      headers_os_checklist: "{{ headers_os_checklist }}"
+      os_checklist_csv_line: "{{ os_checklist_csv_line }}"
