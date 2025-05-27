@@ -1,0 +1,13 @@
+---
+- name: Deploy Redis-Sentinel cluster servers
+  hosts: Redis_servers
+  tasks:
+    - name: Pre-check Redis server installation
+      import_role:
+        name: roles/redis-sentinel-deployment
+        tasks_from: precheck_Redis_Sentinel.yml
+
+    - name: Install Redis server
+      import_role:
+        name: roles/redis-sentinel-deployment
+        tasks_from: redis_sentinel_install.yml

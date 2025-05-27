@@ -1,0 +1,15 @@
+---
+- name: Check Redis-Sentinel server information
+  hosts: Redis_servers
+  tasks:
+    - name: Execute OS checklist role
+      import_role:
+        name: roles/redis-sentinel-checklist
+        tasks_from: main.yml
+
+    - name: Generate report
+      include_role:
+        name: report-generator
+      vars:
+        report_headers: "{{ redis_sentinel_checklist_results.headers_redis_sentinel_checklist }}"
+        report_data_line: "{{ redis_sentinel_checklist_results.headers_redis_sentinel_checklist_csv_line }}"

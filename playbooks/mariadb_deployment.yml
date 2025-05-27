@@ -1,0 +1,23 @@
+---
+- name: Deploy MariaDB cluster servers (Master-Slave) and MaxScale 
+  hosts: MariaDB_servers
+  tasks:
+    - name: Pre-check MariaDB server installation
+      import_role:
+        name: roles/mariadb-setup
+        tasks_from: precheck_MariaDB.yml
+
+    - name: Install MariaDB server (base packages)
+      import_role:
+        name: roles/mariadb-setup
+        tasks_from: mariadb_install.yml
+
+    - name: Configuring MariaDB for Master-Slave Replication
+      import_role:
+        name: roles/mariadb-setup
+        tasks_from: mariadb_replication_setup.yml
+
+    - name: Install MaxScale
+      import_role:
+        name: roles/mariadb-setup
+        tasks_from: maxscale_install.yml

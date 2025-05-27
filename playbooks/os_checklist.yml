@@ -1,0 +1,15 @@
+---
+- name: Check OS information
+  hosts: all
+  tasks:
+    - name: Execute OS checklist role
+      import_role:
+        name: roles/os-checklist
+        tasks_from: main.yml
+
+    - name: Generate report
+      include_role:
+        name: report-generator
+      vars:
+        report_headers: "{{ os_checklist_results.headers_os_checklist }}"
+        report_data_line: "{{ os_checklist_results.os_checklist_csv_line }}"
