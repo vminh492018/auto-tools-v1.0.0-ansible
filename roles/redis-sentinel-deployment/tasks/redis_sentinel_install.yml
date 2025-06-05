@@ -11,7 +11,7 @@
   user:
     name: redis
     system: yes
-    shell: /sbin/nologin
+    shell: /bin/bash
 
 # 2. Copy bộ cài từ role sang máy đích
 - name: Copy installation files to target
@@ -64,23 +64,17 @@
 - name: Start Redis and wait for it to be ready
   block:
     - name: Start Redis server
-      become: true
-      become_method: sudo
-      become_user: redis
-      command: "./src/redis-server redis.conf"
-      args:
-        chdir: "/u01/redis"
+      command: "runuser -l redis -c 'cd /u01/redis && nohup ./src/redis-server redis.conf > /dev/null 2>&1 &'"
+      become: yes
+      become_user: root
 
 - name: Start Sentinel after Redis is ready
   block:
     - name: Start Sentinel
-      become: true
-      become_method: sudo
-      become_user: redis
-      command: "./src/redis-server sentinel.conf --sentinel"
-      args:
-        chdir: "/u01/redis"
-
+      command: "runuser -l redis -c 'cd /u01/redis && nohup ./src/redis-server sentinel.conf --sentinel > /dev/null 2>&1 &'"
+      become: yes
+      become_user: root
+      
 # 7. Verify Redis and Sentinel after deployment
 - name: Verify Redis is running and responding
   shell: "/u01/redis/src/redis-cli -h {{ ansible_default_ipv4.address }} -p 8379 -a 'Redis@2468' ping"
